@@ -1,11 +1,15 @@
 name: Build APK
+
 on: [push, workflow_dispatch]
+
 permissions:
   contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -15,37 +19,38 @@ jobs:
           gradle-version: 8.9
       - name: Write project
         run: |
-          mkdir -p app/src/main/kotlin/com/partygame app/src/main/assets
+          mkdir -p app/src/main/kotlin/com/partypame
           cat > settings.gradle <<'EOF_0'
-          pluginManagement{repositories{google();mavenCentral();gradlePluginPortal()}}
-          dependencyResolutionManagement{repositories{google();mavenCentral()}}
+          pluginManagement {repositories{mavenCentral();gradlePluginPortal()}}
+          dependencyResolutionManagement {repositories{mavenCentral()}}
+          rootProject.name = 'partygame'
           include ':app'
           EOF_0
           cat > build.gradle <<'EOF_1'
-          plugins{
-           id 'com.android.application' version '8.5.2' apply false
-           id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
+          plugins {id 'com.android.application'}
+          android {
+              namespace 'com.partygame'
+              compileSdk 34
+              defaultConfig {
+                  applicationId 'com.partygame'
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName '1.0'
+              }
+          }
+          dependencies {
+              implementation 'org.java-websocket:Java-WebSocket:1.5.6'
           }
           EOF_1
-          cat > app/build.gradle <<'EOF_2'
-          plugins{id 'com.android.application';id 'org.jetbrains.kotlin.android'}
-          android{
-           namespace 'com.partygame'
-           compileSdk 34
-           defaultConfig{applicationId 'com.partygame';minSdk 24;targetSdk 34;versionCode 1;versionName '1.0'}
-           compileOptions{sourceCompatibility JavaVersion.VERSION_17;targetCompatibility JavaVersion.VERSION_17}
-           kotlinOptions{jvmTarget='17'}
-          }
-          dependencies{implementation 'org.java-websocket:Java-WebSocket:1.5.6'}
-          EOF_2
-          cat > app/src/main/AndroidManifest.xml <<'EOF_3'
-          <?xml version="1.0" encoding="utf-8"?>
+          mkdir -p app/src/main
+          cat > app/src/main/AndroidManifest.xml <<'EOF_2'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET"/>
               <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-              <application android:label="ألعاب الشلة" android:usesCleartextTraffic="true" android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
-                  <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="portrait">
+              <application android:allowBackup="true" android:label="لعبة البنت والشباب" android:supportsRtl="true" android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+                  <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN"/>
                           <category android:name="android.intent.category.LAUNCHER"/>
@@ -53,119 +58,100 @@ jobs:
                   </activity>
               </application>
           </manifest>
+          EOF_2
+          mkdir -p app/src/main/assets
+          cat > app/src/main/assets/index.html <<'EOF_3'
+          <!DOCTYPE html>
+          <html lang="ar">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>لعبة البنت والشباب</title>
+              <style>
+                  body { font-family: Tahoma, sans-serif; background: #121212; color: #fff; text-align: center; margin: 0; padding: 20px; }
+                  button { background: #ff4081; color: white; border: none; padding: 10px 20px; font-size: 16px; border-radius: 5px; cursor: pointer; margin: 5px; }
+                  button:hover { background: #f50057; }
+                  input { padding: 10px; font-size: 16px; border-radius: 5px; border: 1px solid #ccc; width: 80%; max-width: 300px; margin: 10px; }
+                  #lobby, #game { display: none; }
+              </style>
+          </head>
+          <body>
+              <h1>لعبة البنت والشباب</h1>
+              <div id="lobby">
+                  <input type="text" id="nameInput" placeholder="أدخل اسمك">
+                  <br>
+                  <button onclick="createRoom()">إنشاء غرفة</button>
+                  <button onclick="joinRoom()">انضمام لغرفة</button>
+              </div>
+              <div id="game">
+                  <h2 id="roomTitle"></h2>
+                  <div id="questionArea"></div>
+                  <input type="text" id="answerInput" placeholder="اكتب إجابتك هنا">
+                  <button onclick="sendAnswer()">إرسال</button>
+                  <div id="scores"></div>
+              </div>
+              <script>
+                  let ws, myName, roomCode, isHost = false;
+                  function showLobby() { document.getElementById('lobby').style.display = 'block'; }
+                  function createRoom() {
+                      myName = document.getElementById('nameInput').value;
+                      if(!myName) return alert('الرجاء إدخال الاسم');
+                      isHost = true;
+                      initWS('create');
+                  }
+                  function joinRoom() {
+                      myName = document.getElementById('nameInput').value;
+                      roomCode = prompt('أدخل رمز الغرفة:');
+                      if(!myName || !roomCode) return alert('الرجاء إدخال الاسم ورمز الغرفة');
+                      initWS('join');
+                  }
+                  function initWS(action) {
+                      ws = new WebSocket('wss://echo.websocket.events');
+                      ws.onopen = () => {
+                          ws.send(JSON.stringify({action, name: myName, code: roomCode}));
+                          document.getElementById('lobby').style.display = 'none';
+                          document.getElementById('game').style.display = 'block';
+                          document.getElementById('roomTitle').innerText = action === 'create' ? 'غرفة جديدة' : 'غرفة رقم: ' + roomCode;
+                      };
+                      ws.onmessage = (event) => {
+                          let data = JSON.parse(event.data);
+                          if(data.type === 'question') {
+                              document.getElementById('questionArea').innerHTML = '<h3>' + data.text + '</h3>';
+                          }
+                      };
+                  }
+                  function sendAnswer() {
+                      let ans = document.getElementById('answerInput').value;
+                      ws.send(JSON.stringify({type: 'answer', answer: ans}));
+                  }
+                  showLobby();
+              </script>
+          </body>
+          </html>
           EOF_3
+          mkdir -p app/src/main/kotlin/com/partygame
           cat > app/src/main/kotlin/com/partygame/MainActivity.kt <<'EOF_4'
           package com.partygame
-          import android.annotation.SuppressLint
-          import android.app.Activity
-          import android.content.Context
-          import android.net.wifi.WifiManager
           import android.os.Bundle
-          import android.view.WindowManager
-          import android.webkit.JavascriptInterface
           import android.webkit.WebView
-          import org.java_websocket.WebSocket
-          import org.java_websocket.handshake.ClientHandshake
-          import org.java_websocket.server.WebSocketServer
-          import java.net.InetSocketAddress
-          import java.net.NetworkInterface
-          import java.util.concurrent.ConcurrentHashMap
-
-          class MainActivity : Activity() {
-              lateinit var web: WebView
-              var server: WebSocketServer? = null
-              val conns = ConcurrentHashMap<Int, WebSocket>()
-              var nextId = 1
-              fun js(code: String) = runOnUiThread { web.evaluateJavascript(code, null) }
-
-              @SuppressLint("SetJavaScriptEnabled")
-              override fun onCreate(b: Bundle?) {
-                  super.onCreate(b)
-                  window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                  web = WebView(this)
-                  web.settings.javaScriptEnabled = true
-                  web.settings.domStorageEnabled = true
-                  web.settings.mediaPlaybackRequiresUserGesture = false
-                  web.addJavascriptInterface(Bridge(), "Android")
-                  setContentView(web)
-                  web.loadUrl("file:///android_asset/index.html")
-              }
-
-              inner class Bridge {
-                  @JavascriptInterface fun startServer() {
-                      if (server != null) return
-                      val s = object : WebSocketServer(InetSocketAddress(8080)) {
-                          override fun onOpen(c: WebSocket, h: ClientHandshake) { val id = nextId++; c.setAttachment(id); conns[id] = c }
-                          override fun onMessage(c: WebSocket, m: String) { val id = c.getAttachment<Int>(); js("hostOnMsg(" + id + "," + org.json.JSONObject.quote(m) + ")") }
-                          override fun onClose(c: WebSocket, code: Int, r: String?, remote: Boolean) { val id = c.getAttachment<Int>(); conns.remove(id); js("hostOnClose(" + id + ")") }
-                          override fun onError(c: WebSocket?, e: Exception?) {}
-                          override fun onStart() {}
-                      }
-                      s.isReuseAddr = true
-                      s.start()
-                      server = s
-                  }
-                  @JavascriptInterface fun bcast(m: String) { for (c in conns.values) { try { c.send(m) } catch (e: Exception) {} } }
-                  @JavascriptInterface fun sendTo(id: Int, m: String) { try { conns[id]?.send(m) } catch (e: Exception) {} }
-                  @JavascriptInterface fun ip(): String {
-                      val l = ArrayList<String>()
-                      for (n in NetworkInterface.getNetworkInterfaces()) for (a in n.inetAddresses)
-                          if (!a.isLoopbackAddress && a.address.size == 4) l.add(a.hostAddress ?: "")
-                      return l.joinToString(" | ")
-                  }
-                  @JavascriptInterface fun gateway(): String {
-                      val g = (applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager).dhcpInfo.gateway
-                      return (g and 255).toString() + "." + ((g shr 8) and 255) + "." + ((g shr 16) and 255) + "." + ((g shr 24) and 255)
-                  }
+          import android.webkit.WebSettings
+          import androidx.appcompat.app.AppCompatActivity
+          class MainActivity : AppCompatActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  val webView = WebView(this)
+                  setContentView(webView)
+                  val webSettings: WebSettings = webView.settings
+                  webSettings.javaScriptEnabled = true
+                  webSettings.domStorageEnabled = true
+                  webView.loadUrl("file:///android_asset/index.html")
               }
           }
           EOF_4
-          cat > app/src/main/assets/index.html <<'EOF_5'
-          <!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><title>ألعاب الشلة</title><style>
-          *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;touch-action:none}
-          body{margin:0;height:100vh;overflow:hidden;background:radial-gradient(circle at 30% 0,#8b1fd1,#4b0a85 75%);font-family:system-ui,Tahoma,sans-serif;color:#fff}
-          .s{display:none;position:absolute;inset:0;flex-direction:column;align-items:center;justify-content:center;padding:14px;gap:12px;text-align:center}
-          .s.on{display:flex}
-          h1{font-size:38px;margin:0;text-shadow:0 4px 0 #2d0652}h2{margin:0;font-size:26px}
-          .btn{background:#ffd60a;color:#3a0868;border:0;border-radius:18px;padding:15px 38px;font-size:24px;font-weight:900;box-shadow:0 6px 0 #b89a00}
-          .btn:active{transform:translateY(5px);box-shadow:0 1px 0 #b89a00}
-          input{font-size:22px;padding:14px;border-radius:16px;border:4px solid #fff;text-align:center;width:80%;max-width:300px}
-          .chip{display:inline-block;margin:3px;padding:7px 14px;border-radius:30px;border:3px solid #fff;font-weight:800;font-size:17px}
-          .row{display:flex;justify-content:space-between;width:100%;max-width:420px;padding:9px 16px;margin:3px 0;border-radius:14px;border:3px solid #fff;font-weight:800;font-size:18px}
-          .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;width:100%;max-width:420px}
-          .tile{aspect-ratio:1;border-radius:14px;border:3px solid #fff;display:flex;align-items:center;justify-content:center;font-size:28px;box-shadow:0 4px 0 #0004}
-          .big{width:130px;height:130px;font-size:70px;border-width:6px;border-radius:28px}
-          .rb{width:230px;height:230px;border-radius:50%;border:8px solid #fff;font-size:70px;font-weight:900;color:#fff;box-shadow:0 10px 0 #0005}
-          .rb:active{transform:translateY(8px);box-shadow:0 2px 0 #0005}
-          .half{width:42vw;height:42vw;max-width:200px;max-height:200px;border-radius:26px;border:6px solid #fff;font-size:60px;color:#fff;box-shadow:0 8px 0 #0005}
-          .half:active{transform:translateY(6px);box-shadow:0 2px 0 #0005}
-          .opt{width:44vw;max-width:200px;padding:20px 6px;margin:5px;border-radius:18px;border:4px solid #fff;background:#32ade6;color:#fff;font-size:32px;font-weight:900;box-shadow:0 5px 0 #0005}
-          .opt.sel{background:#ffd60a;color:#3a0868}
-          #rc{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:42px;font-weight:900;padding:20px}
-          canvas{background:#3d0870;border:5px solid #fff;border-radius:18px}
-          .hud{font-size:21px;font-weight:900}
-          #off{display:none;position:fixed;inset:0;background:#000d;align-items:center;justify-content:center;font-size:26px;z-index:9;text-align:center;padding:20px}
-          </style></head><body>
-          <div id="off">انقطع الاتصال 😢<br>حدّث الصفحة وادخل من جديد</div>
-          <div class="s on" id="join"><h1>🎮 ألعاب الشلة</h1><input id="nm" placeholder="اكتب اسمك" maxlength="12"><button class="btn" onclick="hostGame()">🏠 أنا المضيف</button><button class="btn" style="background:#34c759;box-shadow:0 6px 0 #1f8a3b" onclick="go()">🎮 انضم</button><input id="ip" placeholder="عنوان المضيف (اختياري)" style="font-size:16px;padding:8px"><div style="font-size:13px;opacity:.85">المضيف يشغّل الهوتسبوت، والباقي يتصلون فيه ثم يضغطون انضم</div></div>
-          <div class="s" id="lobby"><h2>غرفة الانتظار</h2><div id="pl"></div><div class="grid" id="gl"></div><div id="ips" style="font-size:13px;opacity:.8;direction:ltr"></div><button class="btn" id="sb" onclick="send({t:'start'})">ابدأ اللعب 🚀</button><div id="wt">بانتظار المضيف…</div></div>
-          <div class="s" id="intro"><div class="hud" id="rn"></div><div class="tile big" id="ti"></div><h1 id="gn"></h1><h2 id="how"></h2><h1 id="cd" style="font-size:80px"></h1></div>
-          <div class="s" id="tap"><div class="hud">⏱ <span id="tl"></span></div><button class="rb" id="tb" style="background:#ff2d92">0</button><div id="tm" style="width:100%;display:flex;flex-direction:column;align-items:center"></div></div>
-          <div class="s" id="alt"><div class="hud">⏱ <span id="ll"></span> &nbsp; 👆 <span id="lc">0</span></div><div style="display:flex;gap:14px"><button class="half" id="a0" style="background:#ff9500">◀</button><button class="half" id="a1" style="background:#ff2d92">▶</button></div></div>
-          <div class="s" id="react" style="padding:0"><div id="rc"></div></div>
-          <div class="s" id="stop"><div class="hud">اضغط عند 5.00 ثانية</div><h1 id="sc" style="font-size:80px"></h1><button class="rb" id="sbt" style="background:#5856d6;font-size:40px">وقّف</button><div id="sr" class="hud"></div></div>
-          <div class="s" id="arena" style="gap:8px"><div class="hud" id="ah"></div><canvas id="cv"></canvas></div>
-          <div class="s" id="quiz"><div class="hud">سؤال <span id="qn"></span> من 6</div><h1 id="qt" style="font-size:44px;line-height:1.3"></h1><div id="qo" style="display:flex;flex-wrap:wrap;justify-content:center"></div></div>
-          <div class="s" id="res"><h2>نتيجة الجولة</h2><div id="rl" style="width:100%;display:flex;flex-direction:column;align-items:center"></div><div>الجولة الجاية تبدأ بعد لحظات…</div></div>
-          <div class="s" id="final"><h1>🏆 الترتيب النهائي</h1><div id="fl" style="width:100%;display:flex;flex-direction:column;align-items:center;overflow:auto"></div><button class="btn" id="rb" onclick="send({t:'start'})">العب من جديد</button></div>
-          <script>
-          var ws,me,ips=[],gl=[],S={ps:[]},lq=-1,lcd=-1,AC,$=function(i){return document.getElementById(i)};
-          var SC={tap:'tap',alt:'alt',react:'react',stop:'stop',arena:'arena',dodge:'arena',whack:'arena',math:'quiz',big:'quiz',count:'quiz'};
-          function bp(f,d){try{AC=AC||new(window.AudioContext||webkitAudioContext)();var o=AC.createOscillator(),g=AC.createGain();o.frequency.value=f;o.connect(g);g.connect(AC.destination);g.gain.value=.08;o.start();o.stop(AC.currentTime+d)}catch(e){}}
-          function show(i){document.querySelectorAll('.s').forEach(function(e){e.classList.toggle('on',e.id==i)})}
-          function send(o){if(ws&&ws.readyState==1)ws.send(JSON.stringify(o))}
-          function go(){var n=$('nm').value.trim()||'لاعب';bp(500,.1);ws=new WebSocket('ws://'+($('ip').value.trim()||Android.gateway())+':8080');
-           ws.onopen=function(){send({t:'join',name:n})};
-           ws.onmessage=function(e){var m=JSON.parse(e.data);if(m.t=='w'){me=m.id;ips=m.ips;gl=m.gl}else if(m.t=='s'){S=m;draw()}};
-           ws.onclose=function(){$('off').style.display='flex'}}
-          function chip(p){return '<span class="chip" style="background:'+p.
+      - name: Build with Gradle
+        run: ./gradlew assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
